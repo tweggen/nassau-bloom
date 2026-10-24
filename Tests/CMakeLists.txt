@@ -40,3 +40,9 @@ add_executable(er_tests er_tests.cpp)
 target_link_libraries(er_tests nassau_bloom_core)
 target_compile_options(er_tests PRIVATE ${NASSAU_WARNING_FLAGS})
 add_test(NAME ErTests COMMAND er_tests)
+
+# ---- G4: the Tank ---------------------------------------------------------
+add_executable(tank_tests tank_tests.cpp)
+target_link_libraries(tank_tests nassau_bloom_core)
+target_compile_options(tank_tests PRIVATE ${NASSAU_WARNING_FLAGS})
+add_test(NAME TankTests COMMAND tank_tests)

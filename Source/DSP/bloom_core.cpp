@@ -17,6 +17,15 @@ constexpr double kDampLowBypassHz = 20.0;      // DESIGN.md §5.4
 constexpr int kErCrossfade = 1024;             // DESIGN.md §4.5
 constexpr double kErRecomputeRatio = 0.005;    // DESIGN.md §4.5: 0.5 %
 
+// The Tank's "as designed" output gain (DESIGN.md §5.6, GATES G4.3): the
+// factor that puts the late-only impulse response at the reference settings
+// (Size 12, RT60 2 s, damping bypassed, Plain, Diffusion 70 %, Mod 0, a unit
+// impulse on both inputs) at a mean per-channel energy of 0.25. Measured, not
+// derived: Tests/tank_tests.cpp prints the raw energy it comes from.
+constexpr double kLateGain = 0.261721;
+constexpr double kLateRtExponent = -0.25;   // (RT60 / 2)^−¼, §5.6
+constexpr double kLateSizeExponent = 0.42;  // S^0.42, §5.6
+
 // DESIGN.md §9.1 time constants.
 constexpr double kGainTau = 0.020;
 constexpr double kPreDelayTau = 0.050;
@@ -35,6 +44,7 @@ void BloomCore::init(float sampleRate)
     preMax_ = std::ceil(kMaxPreDelayMs / 1000.0 * fs_);
     for (auto& d : pre_) d.init(static_cast<int>(preMax_) + 4);
     for (auto& d : er_) d.init(bloom::erMaxDelaySamples(fs_) + 4);
+    tank_.init(fs_);
 
     const double subBlockRate = fs_ / kSubBlock;
     dryGain_.setTimeConstant(kGainTau, fs_);
@@ -48,6 +58,9 @@ void BloomCore::init(float sampleRate)
     lateGain_.setTimeConstant(kGainTau, fs_);
     dampHighHz_.setTimeConstant(kFilterTau, subBlockRate);
     dampLowHz_.setTimeConstant(kFilterTau, subBlockRate);
+    decay_s_.setTimeConstant(kFilterTau, subBlockRate);
+    diffusion_s_.setTimeConstant(kFilterTau, subBlockRate);
+    modulation_s_.setTimeConstant(kFilterTau, subBlockRate);
     erRecomputes_ = 0;
 
     reset();
@@ -65,6 +78,7 @@ void BloomCore::reset()
     erLpOn_ = erHpOn_ = false;
     erFade_ = 0;
     erOrder_ = 0;  // forces a fresh tap set on the next process()
+    tank_.reset();
     // The smoothers are snapped by the next process(), from the targets as
     // they are THEN (DESIGN.md §9.6).
     snapPending_ = true;
@@ -108,15 +122,21 @@ void BloomCore::beginSubBlock()
     lateGain_.setTarget(static_cast<double>(lateLevel_.load(std::memory_order_relaxed)) / 100.0);
     dampHighHz_.setTarget(static_cast<double>(dampHigh_.load(std::memory_order_relaxed)));
     dampLowHz_.setTarget(static_cast<double>(dampLow_.load(std::memory_order_relaxed)));
+    decay_s_.setTarget(static_cast<double>(decay_.load(std::memory_order_relaxed)));
+    diffusion_s_.setTarget(static_cast<double>(diffusion_.load(std::memory_order_relaxed)) / 100.0);
+    modulation_s_.setTarget(static_cast<double>(modulation_.load(std::memory_order_relaxed)) / 100.0);
+    tank_.setScaleTarget(bloom::tankScale(static_cast<double>(size_.load(std::memory_order_relaxed))));
 
     const bool snap = snapPending_;
     if (snapPending_) {
         for (bloom::Smoother* s : {&dryGain_, &wetGain_, &outGain_, &width_s_, &preDelay_, &hpfHz_, &lpfHz_,
-                                   &erGain_, &lateGain_, &dampHighHz_, &dampLowHz_})
+                                   &erGain_, &lateGain_, &dampHighHz_, &dampLowHz_,
+                                   &decay_s_, &diffusion_s_, &modulation_s_})
             s->snap();
         snapPending_ = false;
     } else {
-        for (bloom::Smoother* s : {&hpfHz_, &lpfHz_, &dampHighHz_, &dampLowHz_})
+        for (bloom::Smoother* s : {&hpfHz_, &lpfHz_, &dampHighHz_, &dampLowHz_,
+                                   &decay_s_, &diffusion_s_, &modulation_s_})
             s->step();
     }
 
@@ -149,6 +169,22 @@ void BloomCore::beginSubBlock()
         for (auto& f : erLp_) f.setLowpass(fc, fs_);
     }
     if (erHpOn_) for (auto& f : erHp_) f.setHighpass(dampLowHz_.value, fs_);
+
+    // The Tank (DESIGN.md §5), and its calibrated output gain (§5.6).
+    {
+        bloom::Tank::Block b;
+        b.rt60 = decay_s_.value;
+        b.diffusion = diffusion_s_.value;
+        b.excursion = modulation_s_.value * bloom::kTankExcursion * fs_ / bloom::kDattorroRate;
+        b.dense = complexity_.load(std::memory_order_relaxed) == kComplexityDense;
+        b.dampHighOn = dampHighHz_.value < kDampHighBypassHz;
+        b.dampLowOn = dampLowHz_.value > kDampLowBypassHz;
+        b.dampHighHz = dampHighHz_.value;
+        b.dampLowHz = dampLowHz_.value;
+        tank_.setBlock(b);
+        lateOut_ = kLateGain * std::pow(b.rt60 / 2.0, kLateRtExponent) *
+                   std::pow(tank_.scale(), kLateSizeExponent);
+    }
 
     // Input filters (DESIGN.md §2). Bypassed exactly at the end of the range;
     // switching in starts from zeroed state, deliberately.
@@ -225,8 +261,11 @@ void BloomCore::process(const float* inL, const float* inR,
             if (erLpOn_) { eL = erLp_[0].process(eL); eR = erLp_[1].process(eR); }
             if (erHpOn_) { eL = erHp_[0].process(eL); eR = erHp_[1].process(eR); }
 
-            // ---- Late network: a WIRE until G4–G5 ----
-            const float lL = xL, lR = xR;
+            // ---- Late network: the Tank (DESIGN.md §5) ----
+            float lL, lR;
+            tank_.processSample(xL, xR, lL, lR);
+            lL = static_cast<float>(lL * lateOut_);
+            lR = static_cast<float>(lR * lateOut_);
 
             // ---- Path levels and the wet sum (DESIGN.md §1) ----
             // Assigned, not added to zero, at a level of exactly 0 (G2's rule).
