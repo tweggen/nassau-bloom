@@ -72,8 +72,11 @@ int main() {
     core.setMix(0.0f);
     core.setOutputDb(100.0f);
     run(core, inL, inR, outL, outR, 512, false);
+    // Measured after the first second: since G2 the output gain is smoothed
+    // (20 ms, DESIGN.md §9.1), so a change on a running core ramps in.
     const int n = static_cast<int>(inL.size());
-    const double gainDb = 20.0 * std::log10(rms(outL, 0, n) / rms(inL, 0, n));
+    const int from = static_cast<int>(kFs);
+    const double gainDb = 20.0 * std::log10(rms(outL, from, n) / rms(inL, from, n));
     check("Output above range clamps to +12 dB", std::fabs(gainDb - 12.0) < 0.01);
   }
 

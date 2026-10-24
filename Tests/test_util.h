@@ -49,9 +49,11 @@ struct Xorshift32 {
 };
 
 // ---- Test signals ------------------------------------------------------------
-// The fixed set of GATES.md. G0 needs only Xorshift; the rest arrive with the
-// gates that use them.
-enum class TestSignal { Xorshift };
+// The fixed set of GATES.md; each arrives with the first gate that uses it.
+//   Xorshift  uniform noise, ±0.5
+//   Impulse   1.0 at sample 0, then silence
+//   Sine1k    1 kHz, amplitude 0.5
+enum class TestSignal { Xorshift, Impulse, Sine1k };
 
 inline std::vector<float> testSignal(TestSignal kind, double fs, double seconds,
                                      uint32_t seed = 0xB100Bu) {
@@ -63,6 +65,14 @@ inline std::vector<float> testSignal(TestSignal kind, double fs, double seconds,
       for (auto& s : v) s = 0.5f * rng.nextBipolar();
       break;
     }
+    case TestSignal::Impulse:
+      if (!v.empty()) v[0] = 1.0f;
+      break;
+    case TestSignal::Sine1k:
+      for (size_t i = 0; i < n; ++i)
+        v[i] = static_cast<float>(0.5 * std::sin(2.0 * 3.14159265358979323846 * 1000.0 *
+                                                 static_cast<double>(i) / fs));
+      break;
   }
   return v;
 }

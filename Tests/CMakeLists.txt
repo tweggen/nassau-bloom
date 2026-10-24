@@ -28,3 +28,9 @@ add_executable(dsp_tests dsp_tests.cpp)
 target_include_directories(dsp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source/DSP)
 target_compile_options(dsp_tests PRIVATE ${NASSAU_WARNING_FLAGS})
 add_test(NAME DspTests COMMAND dsp_tests)
+
+# ---- G2: the wet path with the reverb paths still a wire --------------------
+add_executable(wetpath_tests wetpath_tests.cpp)
+target_link_libraries(wetpath_tests nassau_bloom_core)
+target_compile_options(wetpath_tests PRIVATE ${NASSAU_WARNING_FLAGS})
+add_test(NAME WetPathTests COMMAND wetpath_tests)
