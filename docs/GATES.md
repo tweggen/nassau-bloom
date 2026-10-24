@@ -139,7 +139,7 @@ DESIGN §5.1 form, with an optional modulated read), `StretchedAllpass` (§6.1),
 | G1.1 | `Biquad` LP and HP at fc ∈ {100, 1000, 10000} Hz, fs ∈ {44.1, 48, 96} kHz: −3.01 ± 0.1 dB at fc; ≥ 12.0 dB rejection one octave into the stopband *for fc ≤ 0.2 fs* (a 2nd-order Butterworth gives 12.3 dB at 2·fc; the bilinear warp only adds to it on the LP side). |
 | G1.2 | `OnePole` LP: 0.00 ± 0.01 dB at 20 Hz for fc = 1 kHz; −3.0 ± 0.2 dB at fc for fc ≤ 0.1 fs. HP mirrored. |
 | G1.3 | `Allpass`, unmodulated, g ∈ {−0.7, 0.3, 0.5, 0.65, 0.7}: magnitude 0.00 ± 0.01 dB at 20 frequencies across the band. |
-| G1.4 | `StretchedAllpass`: measured group delay (by phase differencing a swept sine response) matches `K(1−a)/(1+a)` at 50 Hz and `K(1+a)/(1−a)` at `fs/(2K)` within ±3 %. The closed-form group delay function (used in §6.1's loop length) agrees with the measurement at 1 kHz within ±3 %. |
+| G1.4 | `StretchedAllpass`: measured group delay (from the impulse response, τ(ω) = Re{Σ n·h[n]·e^−jωn / Σ h[n]·e^−jωn}, which is exact for an IR that has decayed within the window; *amended in G1*: phase differencing of sines needs sub-milliradian phase accuracy at 50 Hz, where the delay is ~1 sample) matches `K(1−a)/(1+a)` at 50 Hz and `K(1+a)/(1−a)` at `fs/(2K)` within ±3 %. The closed-form group delay function (used in §6.1's loop length) agrees with the measurement at 1 kHz within ±3 %. |
 | G1.5 | `DelayLine` linear read at fractional delay 10.5 of a 1 kHz sine: the output phase matches 10.5 samples within ±0.01 samples. An integer read is bit-exact to the input delayed by n. |
 | G1.6 | `RotLfo` over 10⁷ samples at 0.73 Hz, 48 kHz: amplitude stays in 1 ± 1e−6; frequency error < 1e−6 relative. |
 | G1.7 | `ScopedNoDenormals`: a feedback one-pole fed an impulse then silence produces no subnormal samples after 10 s at 48 kHz (`std::fpclassify`). On a platform where the guard is the no-op fallback, the test records "skipped (no FTZ on this arch)" and does not fail. |
@@ -268,8 +268,9 @@ each time (Smaragd's `qxa.plugin_native_editor_reopen` covers the host side).
 
 | Gate | Status |
 |---|---|
-| G0 | in progress (scaffold laid out) |
-| G1–G8 | not started |
+| G0 | DONE except G0.8 (the hand check in Smaragd): `ci/gates.sh` 3/3 on Windows/MSVC and Ubuntu CI; CLAP + VST3 build with the SDK. |
+| G1 | DONE: `dsp_tests` 81/81 (Windows/MSVC). Biquad −3.010 dB at fc in all 18 cells, worst stopband −12.30 dB; OnePole −3.010 dB at fc, worst passband −0.0023 dB; Allpass worst 0.0001 dB over 20 freqs × 5 g; StretchedAllpass group delay within 0.03 % of both closed forms (K = 5, a = 0.3/0.6/0.75); linear read 10.50000 samples; RotLfo amplitude error 2.9e−15, frequency error 1.2e−16 over 1e7 samples; ScopedNoDenormals 426 215 subnormal samples without the guard, 0 with it. |
+| G2–G8 | not started |
 | G9 | not scheduled |
 
 ## Dependency graph
