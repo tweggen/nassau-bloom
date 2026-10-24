@@ -187,6 +187,11 @@ order `o = |nx| + |ny| + |nz|`, `1 ≤ o ≤ O`:
 The direct path (`o = 0`) is excluded, because it is the dry signal and the mix
 handles it.
 
+**Which input each mic hears.** The left mic's taps read the left input and the
+right mic's the right input, as if each channel were its own source at the
+same position. For a mono source (L = R) that is exactly the one-source room,
+and the two tap sets still differ (§4.1), so the ER is stereo.
+
 For an image at distance `r`, with direct-path distance `r0` (to the same mic):
 
 ```

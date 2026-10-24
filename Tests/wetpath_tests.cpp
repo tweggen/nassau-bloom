@@ -25,9 +25,12 @@ std::string fmt(const char* f, double a, double b = 0.0, double c = 0.0) {
 }
 
 // A core at 48 kHz in the wet-only, everything-neutral state: Mix 100 %,
-// filters bypassed, no pre-delay, Width 100 %, Output 0 dB.
+// filters bypassed, no pre-delay, Width 100 %, Output 0 dB, and the reverb
+// paths replaced by a wire (testWireReverb: G2 tests the routing, not the
+// reverb, and keeps doing so once G3-G5 make the paths real).
 void neutralWet(BloomCore& core) {
   core.init(static_cast<float>(kFs));
+  core.testWireReverb(true);
   core.setMix(100.0f);
   core.setInputHpf(20.0f);
   core.setInputLpf(20000.0f);

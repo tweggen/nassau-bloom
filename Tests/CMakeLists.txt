@@ -34,3 +34,9 @@ add_executable(wetpath_tests wetpath_tests.cpp)
 target_link_libraries(wetpath_tests nassau_bloom_core)
 target_compile_options(wetpath_tests PRIVATE ${NASSAU_WARNING_FLAGS})
 add_test(NAME WetPathTests COMMAND wetpath_tests)
+
+# ---- G3: early reflections (bloom_er.h and the ER path) -------------------
+add_executable(er_tests er_tests.cpp)
+target_link_libraries(er_tests nassau_bloom_core)
+target_compile_options(er_tests PRIVATE ${NASSAU_WARNING_FLAGS})
+add_test(NAME ErTests COMMAND er_tests)
