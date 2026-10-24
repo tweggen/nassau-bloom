@@ -1,0 +1,13 @@
+build/
+build_*/
+# ci/gates.sh writes these two, and they matched neither pattern above,
+# so a `git add -A` after running the gate committed the whole build tree.
+build-ci/
+build-ci-plugin/
+.cache/
+*.o
+*.a
+*.so
+*.dylib
+.DS_Store
+compile_commands.json
