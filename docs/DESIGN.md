@@ -759,13 +759,22 @@ be turned into the tail of another.
 * After the crossfade the old structure is no longer processed, so a Tank
   instance does not also pay for the springs.
 * A change arriving during a running crossfade is deferred, as in §4.5.
+* **How Plain/Dense gets two structures from one tail:** the core holds *two*
+  Tank instances. A Plain/Dense switch copies the running tank's whole state
+  (every delay line, filter, LFO and the Size glide) into the idle one, which
+  then continues in the new mode while the old one fades out. The copy is
+  `memcpy`-sized (≈ 1 MB at 48 kHz, ≈ 4 MB at 192 kHz, once per switch) and
+  allocates nothing. Into Dense, the Dense-only allpasses start at zero.
+  Tank/Spring needs no copy: the new structure starts from `reset()`.
 
 ### 9.5 Memory
 
 All buffers are allocated in `init(fs)` for `fs ≤ 192 kHz` and `S = 1.4`, in
 `float`, each delay line rounded up to a power of two. At 192 kHz that is
-about **3.7 MB** per instance (the tank dominates; GATES G6.5 records the
-measured number and corrects this one). `init()`
+**4.14 MB** per instance, measured (GATES G6.5: 1.04 MB at 48 kHz, 2.07 MB
+at 96 kHz). The two Tanks of §9.4 dominate; the springs' 160 short allpasses
+and the pre-delay and ER lines are the rest. (The design estimated 3.7 MB
+before the second Tank.) `init()`
 is called from `OnReset()`, where allocation is allowed, as in `nassau-eq`.
 
 ### 9.6 Reset

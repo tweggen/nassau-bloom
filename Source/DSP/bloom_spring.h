@@ -169,6 +169,16 @@ public:
     outR = out[1];
   }
 
+  // Bytes of delay memory (GATES G6.5).
+  size_t memoryBytes() const {
+    size_t n = 0;
+    for (int c = 0; c < 2; ++c) {
+      n += delay_[c].bytes();
+      for (const auto& s : disp_[c].sec) n += s.ap.line.bytes();
+    }
+    return n;
+  }
+
   // TEST ONLY: the L spring's current loop delay T, in samples.
   double testLength() const { return len_[0].value; }
 

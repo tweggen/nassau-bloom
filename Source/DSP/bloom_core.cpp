@@ -49,7 +49,7 @@ void BloomCore::init(float sampleRate)
     preMax_ = std::ceil(kMaxPreDelayMs / 1000.0 * fs_);
     for (auto& d : pre_) d.init(static_cast<int>(preMax_) + 4);
     for (auto& d : er_) d.init(bloom::erMaxDelaySamples(fs_) + 4);
-    tank_.init(fs_);
+    for (auto& t : tank_) t.init(fs_);
     spring_.init(fs_);
 
     const double subBlockRate = fs_ / kSubBlock;
@@ -84,9 +84,9 @@ void BloomCore::reset()
     erLpOn_ = erHpOn_ = false;
     erFade_ = 0;
     erOrder_ = 0;  // forces a fresh tap set on the next process()
-    tank_.reset();
+    for (auto& t : tank_) t.reset();
     spring_.reset();
-    activeAlgorithm_ = algorithm_.load(std::memory_order_relaxed);
+    lateFade_ = 0;  // the next process() picks the structure afresh
     // The smoothers are snapped by the next process(), from the targets as
     // they are THEN (DESIGN.md §9.6).
     snapPending_ = true;
@@ -133,18 +133,6 @@ void BloomCore::beginSubBlock()
     decay_s_.setTarget(static_cast<double>(decay_.load(std::memory_order_relaxed)));
     diffusion_s_.setTarget(static_cast<double>(diffusion_.load(std::memory_order_relaxed)) / 100.0);
     modulation_s_.setTarget(static_cast<double>(modulation_.load(std::memory_order_relaxed)) / 100.0);
-    // The late network that runs. A switch starts the other one from reset;
-    // G6 turns this into DESIGN.md §9.4's crossfade.
-    {
-        const int alg = algorithm_.load(std::memory_order_relaxed);
-        if (alg != activeAlgorithm_) {
-            if (alg == kAlgorithmSpring) spring_.reset(); else tank_.reset();
-            activeAlgorithm_ = alg;
-        }
-    }
-    const double sizeM = static_cast<double>(size_.load(std::memory_order_relaxed));
-    if (activeAlgorithm_ == kAlgorithmSpring) spring_.setSizeTarget(sizeM);
-    else tank_.setScaleTarget(bloom::tankScale(sizeM));
 
     const bool snap = snapPending_;
     if (snapPending_) {
@@ -189,32 +177,40 @@ void BloomCore::beginSubBlock()
     }
     if (erHpOn_) for (auto& f : erHp_) f.setHighpass(dampLowHz_.value, fs_);
 
-    // The Spring (DESIGN.md §6) and its output gain (§6.3); Modulation and
-    // Complexity do nothing here (§6.4).
-    if (activeAlgorithm_ == kAlgorithmSpring) {
-        bloom::Spring::Block b;
-        b.rt60 = decay_s_.value;
-        b.diffusion = diffusion_s_.value;
-        b.dampHighHz = dampHighHz_.value;
-        b.dampLowOn = dampLowHz_.value > kDampLowBypassHz;
-        b.dampLowHz = dampLowHz_.value;
-        spring_.setBlock(b);
-        lateOut_ = kSpringGain * std::pow(b.rt60 / 2.0, kLateRtExponent);
-    }
-    // The Tank (DESIGN.md §5), and its calibrated output gain (§5.6).
-    else {
-        bloom::Tank::Block b;
-        b.rt60 = decay_s_.value;
-        b.diffusion = diffusion_s_.value;
-        b.excursion = modulation_s_.value * bloom::kTankExcursion * fs_ / bloom::kDattorroRate;
-        b.dense = complexity_.load(std::memory_order_relaxed) == kComplexityDense;
-        b.dampHighOn = dampHighHz_.value < kDampHighBypassHz;
-        b.dampLowOn = dampLowHz_.value > kDampLowBypassHz;
-        b.dampHighHz = dampHighHz_.value;
-        b.dampLowHz = dampLowHz_.value;
-        tank_.setBlock(b);
-        lateOut_ = kLateGain * std::pow(b.rt60 / 2.0, kLateRtExponent) *
-                   std::pow(tank_.scale(), kLateSizeExponent);
+    // The late network (DESIGN.md §9.4). A change of Algorithm or Complexity
+    // starts the new structure and crossfades to it; one arriving during a
+    // crossfade waits for it to end, as §4.5's does.
+    {
+        const int alg = algorithm_.load(std::memory_order_relaxed);
+        const bool dense = complexity_.load(std::memory_order_relaxed) == kComplexityDense;
+        const bool differs = alg != late_.algorithm || (alg == kAlgorithmTank && dense != late_.dense);
+        if (snap) {
+            // After init()/reset() every structure is at rest: just pick one.
+            late_.algorithm = alg;
+            late_.tank = 0;
+            late_.dense = dense;
+            lateFade_ = 0;
+        } else if (lateFade_ == 0 && differs) {
+            LateSlot next;
+            next.algorithm = alg;
+            next.dense = dense;
+            if (alg == kAlgorithmSpring) {
+                spring_.reset();
+            } else if (late_.algorithm == kAlgorithmSpring) {
+                next.tank = 0;  // no tank is running: start one from rest
+                tank_[0].reset();
+            } else {
+                // Plain <-> Dense: the other tank continues this one's tail.
+                next.tank = 1 - late_.tank;
+                tank_[next.tank].copyStateFrom(tank_[late_.tank], dense);
+            }
+            lateOld_ = late_;
+            late_ = next;
+            lateFade_ = lateFadeLen_;
+        }
+        const double sizeM = static_cast<double>(size_.load(std::memory_order_relaxed));
+        setUpLate(late_, sizeM);
+        if (lateFade_ > 0) setUpLate(lateOld_, sizeM);
     }
 
     // Input filters (DESIGN.md §2). Bypassed exactly at the end of the range;
@@ -230,6 +226,56 @@ void BloomCore::beginSubBlock()
         const double fc = std::min(lpfHz_.value, 0.45 * fs_);
         for (auto& f : lpf_) f.setLowpass(fc, fs_);
     }
+}
+
+// Targets and per-sub-block coefficients for one late structure (§5, §6).
+void BloomCore::setUpLate(LateSlot& s, double sizeMetres)
+{
+    const double rtTerm = std::pow(decay_s_.value / 2.0, kLateRtExponent);
+    if (s.algorithm == kAlgorithmSpring) {
+        // Modulation and Complexity do nothing here (§6.4).
+        spring_.setSizeTarget(sizeMetres);
+        bloom::Spring::Block b;
+        b.rt60 = decay_s_.value;
+        b.diffusion = diffusion_s_.value;
+        b.dampHighHz = dampHighHz_.value;
+        b.dampLowOn = dampLowHz_.value > kDampLowBypassHz;
+        b.dampLowHz = dampLowHz_.value;
+        spring_.setBlock(b);
+        s.out = kSpringGain * rtTerm;
+    } else {
+        bloom::Tank& t = tank_[s.tank];
+        t.setScaleTarget(bloom::tankScale(sizeMetres));
+        bloom::Tank::Block b;
+        b.rt60 = decay_s_.value;
+        b.diffusion = diffusion_s_.value;
+        b.excursion = modulation_s_.value * bloom::kTankExcursion * fs_ / bloom::kDattorroRate;
+        b.dense = s.dense;
+        b.dampHighOn = dampHighHz_.value < kDampHighBypassHz;
+        b.dampLowOn = dampLowHz_.value > kDampLowBypassHz;
+        b.dampHighHz = dampHighHz_.value;
+        b.dampLowHz = dampLowHz_.value;
+        t.setBlock(b);
+        s.out = kLateGain * rtTerm * std::pow(t.scale(), kLateSizeExponent);
+    }
+}
+
+void BloomCore::processLate(const LateSlot& s, float xL, float xR, float& lL, float& lR)
+{
+    if (s.algorithm == kAlgorithmSpring) spring_.processSample(xL, xR, lL, lR);
+    else tank_[s.tank].processSample(xL, xR, lL, lR);
+    lL = static_cast<float>(lL * s.out);
+    lR = static_cast<float>(lR * s.out);
+}
+
+size_t BloomCore::memoryBytes() const
+{
+    size_t n = 0;
+    for (const auto& d : pre_) n += d.bytes();
+    for (const auto& d : er_) n += d.bytes();
+    for (const auto& t : tank_) n += t.memoryBytes();
+    n += spring_.memoryBytes();
+    return n;
 }
 
 void BloomCore::process(const float* inL, const float* inR,
@@ -294,10 +340,19 @@ void BloomCore::process(const float* inL, const float* inR,
 
             // ---- Late network: the Tank (§5) or the Spring (§6) ----
             float lL, lR;
-            if (activeAlgorithm_ == kAlgorithmSpring) spring_.processSample(xL, xR, lL, lR);
-            else tank_.processSample(xL, xR, lL, lR);
-            lL = static_cast<float>(lL * lateOut_);
-            lR = static_cast<float>(lR * lateOut_);
+            processLate(late_, xL, xR, lL, lR);
+            lateRun_ = 1;
+            if (lateFade_ > 0) {
+                // The old structure keeps receiving input until the end of
+                // the crossfade (§9.4), then is no longer processed.
+                float oL, oR;
+                processLate(lateOld_, xL, xR, oL, oR);
+                lateRun_ = 2;
+                const float f = static_cast<float>(lateFadeLen_ - lateFade_ + 1) / static_cast<float>(lateFadeLen_);
+                lL = oL + f * (lL - oL);
+                lR = oR + f * (lR - oR);
+                --lateFade_;
+            }
 
             // ---- Path levels and the wet sum (DESIGN.md §1) ----
             // Assigned, not added to zero, at a level of exactly 0 (G2's rule).

@@ -145,6 +145,50 @@ public:
 
   double scale() const { return scale_.value; }
 
+  // Become a copy of `o`'s running state (DESIGN.md §9.4: a Plain/Dense switch
+  // starts the new structure from the current tank). Both tanks must have
+  // been init()ed at the same fs; no allocation. With `zeroDenseExtras` the
+  // Dense-only allpasses start at zero instead, which is what a switch INTO
+  // Dense wants: whatever they hold is left over from some earlier use.
+  void copyStateFrom(const Tank& o, bool zeroDenseExtras) {
+    for (int c = 0; c < 2; ++c) {
+      for (int k = 0; k < 4; ++k) inDiff_[c][k].copyFrom(o.inDiff_[c][k]);
+      ap1_[c].copyFrom(o.ap1_[c]);
+      ap3_[c].copyFrom(o.ap3_[c]);
+      if (zeroDenseExtras) ap3_[c].reset();
+      ap2_[c].copyFrom(o.ap2_[c]);
+      d1_[c].copyFrom(o.d1_[c]);
+      d2_[c].copyFrom(o.d2_[c]);
+      lp_[c] = o.lp_[c];
+      hp_[c] = o.hp_[c];
+      cross_[c] = o.cross_[c];
+      gain_[c] = o.gain_[c];
+    }
+    lpOn_ = o.lpOn_;
+    hpOn_ = o.hpOn_;
+    for (int k = 0; k < 4; ++k) lfo_[k] = o.lfo_[k];
+    scale_ = o.scale_;
+    glideFrom_ = o.glideFrom_;
+    glideTo_ = o.glideTo_;
+    for (int i = 0; i < kNumLengths; ++i) {
+      curLen_[i] = o.curLen_[i];
+      fromLen_[i] = o.fromLen_[i];
+      toLen_[i] = o.toLen_[i];
+    }
+    snapPending_ = o.snapPending_;
+    blk_ = o.blk_;
+  }
+
+  // Bytes of delay memory (GATES G6.5).
+  size_t memoryBytes() const {
+    size_t n = 0;
+    for (int c = 0; c < 2; ++c) {
+      for (const auto& a : inDiff_[c]) n += a.line.bytes();
+      n += ap1_[c].line.bytes() + ap3_[c].line.bytes() + ap2_[c].line.bytes() + d1_[c].bytes() + d2_[c].bytes();
+    }
+    return n;
+  }
+
   // TEST ONLY (GATES G4.10): the current length, in samples, of delay 24–30.
   double testD1Length() const { return curLen_[kD1]; }
 

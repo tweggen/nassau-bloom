@@ -129,6 +129,15 @@ struct DelayLine {
   }
 
   int capacity() const { return static_cast<int>(mask); }
+  size_t bytes() const { return buf.size() * sizeof(float); }
+
+  // Copy another line's contents and write position. Both must have been
+  // init()ed to the same size; no allocation (GATES R3).
+  void copyFrom(const DelayLine& o) {
+    std::copy(o.buf.begin(), o.buf.begin() + static_cast<std::ptrdiff_t>(std::min(buf.size(), o.buf.size())),
+              buf.begin());
+    pos = o.pos & mask;
+  }
 
   void reset() {
     std::fill(buf.begin(), buf.end(), 0.0f);
@@ -169,6 +178,10 @@ struct Allpass {
 
   void init(int maxDelay) { line.init(maxDelay); }
   void reset() { line.reset(); }
+  void copyFrom(const Allpass& o) {
+    line.copyFrom(o.line);
+    g = o.g;
+  }
 
   // Fixed integer delay M ≥ 1.
   float process(float x, int m) {
