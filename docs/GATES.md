@@ -178,8 +178,8 @@ in `BloomCore`.
 | G3.4 | The earliest tap's delay equals `(r₁ − r₀)/c` computed independently in the test from the DESIGN §4.1 geometry, ±1 sample. |
 | G3.5 | Every tap delay < the ER buffer length, for Size 40, order 3, at 192 kHz. The maximum tap delay is 63 380 ± 2 samples on L and 61 685 ± 2 on R (DESIGN §4.5). |
 | G3.6 | L and R tap sets differ: sorting each channel's taps by delay, ≥ 50 % of rank-paired taps differ in delay by ≥ 1 sample, at 48 kHz, Size 12. **Measured** as well: for a mono `Impulse` the ER-only output has L ≠ R. (With the source on the mics' symmetry axis this measured 0 %: DESIGN §4.1.) |
-| G3.7 | Size step 5 → 25 m on a running `Xorshift`: the ER output has no sample-to-sample step greater than 3× the largest step in the 100 ms before the change. The crossfade completes within 2 × 1024 samples. |
-| G3.8 | Holding Size constant: no tap recompute happens (counted via a test-only counter exposed in debug builds only; R6 exception, stated). |
+| G3.7 | Size step 5 → 25 m on a running signal. (a) **The crossfade is a crossfade**: on `Xorshift`, over the 1024 samples after the change, the ER output equals `old + (k/1024)·(new − old)` on the k-th sample within 1e−5, where old/new are the outputs of cores held at Size 5 and Size 25. (b) On `Sine1k`, no sample-to-sample step greater than 3× the largest step in the 100 ms before the change. (c) The crossfade completes within 2 × 1024 samples: from then on the output equals a Size-25 core's, bit-exactly. *Amended in G3*: the original step-only criterion, on noise, passed with the crossfade **disabled** (noise already steps by ~0.8 per sample), and on a sine it passed too, by luck of the switching instant. (a) is the half that fails a hard switch. |
+| G3.8 | Holding Size constant: no tap recompute happens (counted via `testErRecomputeCount()`, a test-only accessor, present in every build because it costs one int; R6 exception, stated). |
 
 ---
 
@@ -271,7 +271,8 @@ each time (Smaragd's `qxa.plugin_native_editor_reopen` covers the host side).
 | G0 | DONE except G0.8 (the hand check in Smaragd): `ci/gates.sh` 3/3 on Windows/MSVC and Ubuntu CI; CLAP + VST3 build with the SDK. |
 | G1 | DONE: `dsp_tests` 81/81 (Windows/MSVC). Biquad −3.010 dB at fc in all 18 cells, worst stopband −12.30 dB; OnePole −3.010 dB at fc, worst passband −0.0023 dB; Allpass worst 0.0001 dB over 20 freqs × 5 g; StretchedAllpass group delay within 0.03 % of both closed forms (K = 5, a = 0.3/0.6/0.75); linear read 10.50000 samples; RotLfo amplitude error 2.9e−15, frequency error 1.2e−16 over 1e7 samples; ScopedNoDenormals 426 215 subnormal samples without the guard, 0 with it. |
 | G2 | DONE: `wetpath_tests` 18/18 (Windows/MSVC). Neutral wet path bit-exact at block sizes 1/32/33/512; 37.0 ms puts the impulse at sample 1776 exactly (1.0, all else exactly 0), 37.01 ms splits 0.5201/0.4799; Mix 50 % within 0.023 dB of Mix 0 and 0.038 dB of Mix 100; Width 200 % on pure side +6.0206 dB, pure mid bit-exact at every width; automated pre-delay largest step 0.0653 against a 0.2611 limit; HPF switch-in peak 0.550 for a 0.500 input. Watched failing: inexact mix end points fail G2.2; a pre-delay read without its one-sample offset fails G2.2 and G2.5. |
-| G3–G8 | not started |
+| G3 | DONE: `er_tests` 32/32 (Windows/MSVC). 24 / 62 taps enumerated; Σ gain² exact to 0.0000 % at every Size; measured impulse energy 0.25000 per channel at Size 3/12/40, both orders; first tap within 0.43 samples of independent geometry; longest tap at 192 kHz 63 380 (L) / 61 685 (R), buffer 76 800; all 24 rank-paired L/R taps differ, and a mono impulse gives L ≠ R; Size-step crossfade matches the linear blend to 2.8e−8 and is bit-exact to a Size-25 core after 2048 samples; one recompute per change, none while Size holds or moves < 0.5 %. Watched failing: crossfade disabled fails G3.7(a) (error 0.5); the original step-only G3.7 did not fail it. |
+| G4–G8 | not started |
 | G9 | not scheduled |
 
 ## Dependency graph

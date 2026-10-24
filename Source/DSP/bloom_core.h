@@ -3,13 +3,15 @@
 #include <atomic>
 
 #include "bloom_dsp.h"
+#include "bloom_er.h"
 
 /**
  * BloomCore — the NassauBloom stereo reverb DSP core.
  *
- * G2 (docs/GATES.md): the input filters, the pre-delay, the width stage, the
- * mix and the output are real; the two reverb paths are still a WIRE (wet =
- * the filtered, pre-delayed input). G3–G5 replace the wire.
+ * G3 (docs/GATES.md): the input filters, the pre-delay, the early
+ * reflections, the width stage, the mix and the output are real. The late
+ * network is still a WIRE (late = the filtered, pre-delayed input); G4–G5
+ * replace it.
  *
  * Design contract (docs/DESIGN.md, kept stable across gates):
  *   - Zero framework dependencies (GATES R2).
@@ -91,6 +93,15 @@ public:
     testWetR_ = wetR;
   }
 
+  /// TEST ONLY. While on, both reverb paths are replaced by a wire: the wet
+  /// sum IS the filtered, pre-delayed input. Keeps G2's bit-exact checks of
+  /// the routing meaningful once the paths are real reverbs.
+  void testWireReverb(bool on) { testWire_ = on; }
+
+  /// TEST ONLY (GATES G3.8). How many times the ER taps have been computed
+  /// since init(), counting both channels of a set as one.
+  int testErRecomputeCount() const { return erRecomputes_; }
+
 private:
   void beginSubBlock();
 
@@ -131,7 +142,25 @@ private:
   bloom::DelayLine pre_[2];
   double preMax_ = 0.0;  // samples
 
-  // ---- Test hook ----
+  // ---- Early reflections (DESIGN.md §4) ----
+  void startErSet(int set, double size, int order);
+  bloom::DelayLine er_[2];
+  bloom::ErTaps erSet_[2][2];   // [set A/B][channel L/R]
+  int erActive_ = 0;            // the set being heard
+  int erFade_ = 0;              // samples of crossfade left, 0 = none
+  double erSize_ = 0.0;         // Size the active set was computed for
+  int erOrder_ = 0;             // reflection order it was computed for
+  int erRecomputes_ = 0;
+  bloom::OnePole erLp_[2], erHp_[2];
+  bool erLpOn_ = false, erHpOn_ = false;
+
+  // Per sample: the path levels as linear gains. Per sub-block: the wall
+  // damping cutoffs, shared by the late network from G4 on (§5.4).
+  bloom::Smoother erGain_, lateGain_;
+  bloom::Smoother dampHighHz_, dampLowHz_;
+
+  // ---- Test hooks ----
   const float* testWetL_ = nullptr;
   const float* testWetR_ = nullptr;
+  bool testWire_ = false;
 };
