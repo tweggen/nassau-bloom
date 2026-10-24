@@ -4,15 +4,16 @@
 
 #include "bloom_dsp.h"
 #include "bloom_er.h"
+#include "bloom_spring.h"
 #include "bloom_tank.h"
 
 /**
  * BloomCore — the NassauBloom stereo reverb DSP core.
  *
- * G4 (docs/GATES.md): the input filters, the pre-delay, the early
- * reflections, the Tank, the width stage, the mix and the output are real.
- * Algorithm = Spring still runs the Tank until G5; switching Complexity is
- * not yet crossfaded (G6).
+ * G5 (docs/GATES.md): the input filters, the pre-delay, the early
+ * reflections, the Tank, the Spring, the width stage, the mix and the output
+ * are real. Switching Algorithm or Complexity is not yet crossfaded (G6): a
+ * switch to the other late network starts it from reset, at once.
 
  *
  * Design contract (docs/DESIGN.md, kept stable across gates):
@@ -107,6 +108,9 @@ public:
   /// TEST ONLY (GATES G4.10). The current length of the Tank's delay 24–30.
   double testTankD1Length() const { return tank_.testD1Length(); }
 
+  /// TEST ONLY. The L spring's current loop delay T, in samples.
+  double testSpringLength() const { return spring_.testLength(); }
+
 private:
   void beginSubBlock();
 
@@ -167,7 +171,11 @@ private:
   // ---- Late network: the Tank (DESIGN.md §5) ----
   bloom::Tank tank_;
   bloom::Smoother decay_s_, diffusion_s_, modulation_s_;  // per sub-block
-  double lateOut_ = 0.0;  // kLateGain · (RT60/2)^−¼ · S^0.42 (§5.6)
+  double lateOut_ = 0.0;  // kLateGain · (RT60/2)^−¼ · S^0.42 (§5.6), or the Spring's (§6.3)
+
+  // ---- Late network: the Spring (DESIGN.md §6) ----
+  bloom::Spring spring_;
+  int activeAlgorithm_ = kAlgorithmTank;  // the late network process() runs
 
   // ---- Test hooks ----
   const float* testWetL_ = nullptr;

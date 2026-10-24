@@ -26,6 +26,11 @@ constexpr double kLateGain = 0.261721;
 constexpr double kLateRtExponent = -0.25;   // (RT60 / 2)^−¼, §5.6
 constexpr double kLateSizeExponent = 0.42;  // S^0.42, §5.6
 
+// The Spring's "as designed" output gain (DESIGN.md §6.3, GATES G5.4), measured
+// as kLateGain is, at Size 10, RT60 2 s, Diffusion 65 %, damping 4500 / 20 Hz.
+// The (RT60/2)^−¼ compensation is the Tank's.
+constexpr double kSpringGain = 0.708526;
+
 // DESIGN.md §9.1 time constants.
 constexpr double kGainTau = 0.020;
 constexpr double kPreDelayTau = 0.050;
@@ -45,6 +50,7 @@ void BloomCore::init(float sampleRate)
     for (auto& d : pre_) d.init(static_cast<int>(preMax_) + 4);
     for (auto& d : er_) d.init(bloom::erMaxDelaySamples(fs_) + 4);
     tank_.init(fs_);
+    spring_.init(fs_);
 
     const double subBlockRate = fs_ / kSubBlock;
     dryGain_.setTimeConstant(kGainTau, fs_);
@@ -79,6 +85,8 @@ void BloomCore::reset()
     erFade_ = 0;
     erOrder_ = 0;  // forces a fresh tap set on the next process()
     tank_.reset();
+    spring_.reset();
+    activeAlgorithm_ = algorithm_.load(std::memory_order_relaxed);
     // The smoothers are snapped by the next process(), from the targets as
     // they are THEN (DESIGN.md §9.6).
     snapPending_ = true;
@@ -125,7 +133,18 @@ void BloomCore::beginSubBlock()
     decay_s_.setTarget(static_cast<double>(decay_.load(std::memory_order_relaxed)));
     diffusion_s_.setTarget(static_cast<double>(diffusion_.load(std::memory_order_relaxed)) / 100.0);
     modulation_s_.setTarget(static_cast<double>(modulation_.load(std::memory_order_relaxed)) / 100.0);
-    tank_.setScaleTarget(bloom::tankScale(static_cast<double>(size_.load(std::memory_order_relaxed))));
+    // The late network that runs. A switch starts the other one from reset;
+    // G6 turns this into DESIGN.md §9.4's crossfade.
+    {
+        const int alg = algorithm_.load(std::memory_order_relaxed);
+        if (alg != activeAlgorithm_) {
+            if (alg == kAlgorithmSpring) spring_.reset(); else tank_.reset();
+            activeAlgorithm_ = alg;
+        }
+    }
+    const double sizeM = static_cast<double>(size_.load(std::memory_order_relaxed));
+    if (activeAlgorithm_ == kAlgorithmSpring) spring_.setSizeTarget(sizeM);
+    else tank_.setScaleTarget(bloom::tankScale(sizeM));
 
     const bool snap = snapPending_;
     if (snapPending_) {
@@ -170,8 +189,20 @@ void BloomCore::beginSubBlock()
     }
     if (erHpOn_) for (auto& f : erHp_) f.setHighpass(dampLowHz_.value, fs_);
 
+    // The Spring (DESIGN.md §6) and its output gain (§6.3); Modulation and
+    // Complexity do nothing here (§6.4).
+    if (activeAlgorithm_ == kAlgorithmSpring) {
+        bloom::Spring::Block b;
+        b.rt60 = decay_s_.value;
+        b.diffusion = diffusion_s_.value;
+        b.dampHighHz = dampHighHz_.value;
+        b.dampLowOn = dampLowHz_.value > kDampLowBypassHz;
+        b.dampLowHz = dampLowHz_.value;
+        spring_.setBlock(b);
+        lateOut_ = kSpringGain * std::pow(b.rt60 / 2.0, kLateRtExponent);
+    }
     // The Tank (DESIGN.md §5), and its calibrated output gain (§5.6).
-    {
+    else {
         bloom::Tank::Block b;
         b.rt60 = decay_s_.value;
         b.diffusion = diffusion_s_.value;
@@ -261,9 +292,10 @@ void BloomCore::process(const float* inL, const float* inR,
             if (erLpOn_) { eL = erLp_[0].process(eL); eR = erLp_[1].process(eR); }
             if (erHpOn_) { eL = erHp_[0].process(eL); eR = erHp_[1].process(eR); }
 
-            // ---- Late network: the Tank (DESIGN.md §5) ----
+            // ---- Late network: the Tank (§5) or the Spring (§6) ----
             float lL, lR;
-            tank_.processSample(xL, xR, lL, lR);
+            if (activeAlgorithm_ == kAlgorithmSpring) spring_.processSample(xL, xR, lL, lR);
+            else tank_.processSample(xL, xR, lL, lR);
             lL = static_cast<float>(lL * lateOut_);
             lR = static_cast<float>(lR * lateOut_);
 
