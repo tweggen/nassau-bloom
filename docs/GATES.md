@@ -270,7 +270,8 @@ each time (Smaragd's `qxa.plugin_native_editor_reopen` covers the host side).
 |---|---|
 | G0 | DONE except G0.8 (the hand check in Smaragd): `ci/gates.sh` 3/3 on Windows/MSVC and Ubuntu CI; CLAP + VST3 build with the SDK. |
 | G1 | DONE: `dsp_tests` 81/81 (Windows/MSVC). Biquad −3.010 dB at fc in all 18 cells, worst stopband −12.30 dB; OnePole −3.010 dB at fc, worst passband −0.0023 dB; Allpass worst 0.0001 dB over 20 freqs × 5 g; StretchedAllpass group delay within 0.03 % of both closed forms (K = 5, a = 0.3/0.6/0.75); linear read 10.50000 samples; RotLfo amplitude error 2.9e−15, frequency error 1.2e−16 over 1e7 samples; ScopedNoDenormals 426 215 subnormal samples without the guard, 0 with it. |
-| G2–G8 | not started |
+| G2 | DONE: `wetpath_tests` 18/18 (Windows/MSVC). Neutral wet path bit-exact at block sizes 1/32/33/512; 37.0 ms puts the impulse at sample 1776 exactly (1.0, all else exactly 0), 37.01 ms splits 0.5201/0.4799; Mix 50 % within 0.023 dB of Mix 0 and 0.038 dB of Mix 100; Width 200 % on pure side +6.0206 dB, pure mid bit-exact at every width; automated pre-delay largest step 0.0653 against a 0.2611 limit; HPF switch-in peak 0.550 for a 0.500 input. Watched failing: inexact mix end points fail G2.2; a pre-delay read without its one-sample offset fails G2.2 and G2.5. |
+| G3–G8 | not started |
 | G9 | not scheduled |
 
 ## Dependency graph
