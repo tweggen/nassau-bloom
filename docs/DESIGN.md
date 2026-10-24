@@ -723,6 +723,14 @@ per sample. Moving `Size` therefore glides the pitch of the tail briefly. That
 is the accepted behaviour of a size knob on Lexicon-family units, and it
 avoids rebuilding the network. All buffers are sized for `S_max = 1.4`.
 
+**Lengths glide to rounded targets.** At rest the tank reads with integer
+taps, so every Size-scaled length (the five in-loop elements per branch and
+the fourteen output taps) must be an integer at rest. During a glide each
+length therefore moves linearly from where it is to its *rounded* target, in
+step with the smoothed scale, and is exactly that integer when the scale
+arrives; the switch back to integer reads is seamless. A new target mid-glide
+re-anchors every length at its current value.
+
 The smoothed length is also **slew-limited to 0.25 samples per sample**. The
 150 ms smoother alone would move the 24–30 read position by up to about one
 sample per sample on a large Size step, and at more than one the read runs

@@ -4,14 +4,16 @@
 
 #include "bloom_dsp.h"
 #include "bloom_er.h"
+#include "bloom_tank.h"
 
 /**
  * BloomCore — the NassauBloom stereo reverb DSP core.
  *
- * G3 (docs/GATES.md): the input filters, the pre-delay, the early
- * reflections, the width stage, the mix and the output are real. The late
- * network is still a WIRE (late = the filtered, pre-delayed input); G4–G5
- * replace it.
+ * G4 (docs/GATES.md): the input filters, the pre-delay, the early
+ * reflections, the Tank, the width stage, the mix and the output are real.
+ * Algorithm = Spring still runs the Tank until G5; switching Complexity is
+ * not yet crossfaded (G6).
+
  *
  * Design contract (docs/DESIGN.md, kept stable across gates):
  *   - Zero framework dependencies (GATES R2).
@@ -102,6 +104,9 @@ public:
   /// since init(), counting both channels of a set as one.
   int testErRecomputeCount() const { return erRecomputes_; }
 
+  /// TEST ONLY (GATES G4.10). The current length of the Tank's delay 24–30.
+  double testTankD1Length() const { return tank_.testD1Length(); }
+
 private:
   void beginSubBlock();
 
@@ -158,6 +163,11 @@ private:
   // damping cutoffs, shared by the late network from G4 on (§5.4).
   bloom::Smoother erGain_, lateGain_;
   bloom::Smoother dampHighHz_, dampLowHz_;
+
+  // ---- Late network: the Tank (DESIGN.md §5) ----
+  bloom::Tank tank_;
+  bloom::Smoother decay_s_, diffusion_s_, modulation_s_;  // per sub-block
+  double lateOut_ = 0.0;  // kLateGain · (RT60/2)^−¼ · S^0.42 (§5.6)
 
   // ---- Test hooks ----
   const float* testWetL_ = nullptr;
