@@ -21,3 +21,10 @@ target_link_libraries(preset_tests nassau_bloom_core)
 target_include_directories(preset_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Plugin)
 target_compile_options(preset_tests PRIVATE ${NASSAU_WARNING_FLAGS})
 add_test(NAME PresetTests COMMAND preset_tests)
+
+# ---- G1: DSP primitives (Source/DSP/bloom_dsp.h) ---------------------------
+# Header-only; no link against the core needed.
+add_executable(dsp_tests dsp_tests.cpp)
+target_include_directories(dsp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source/DSP)
+target_compile_options(dsp_tests PRIVATE ${NASSAU_WARNING_FLAGS})
+add_test(NAME DspTests COMMAND dsp_tests)
