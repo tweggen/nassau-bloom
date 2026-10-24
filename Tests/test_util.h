@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <iostream>
 #include <vector>
@@ -267,4 +268,62 @@ inline double echoDensity(const std::vector<float>& ir, double fs, double t0, do
     ++count;
   }
   return count ? sum / count : 0.0;
+}
+
+// ---- Spectra (GATES "Two band methods") --------------------------------------
+
+// In-place iterative radix-2 FFT; the size must be a power of two.
+inline void fftInPlace(std::vector<std::complex<double>>& a) {
+  const size_t n = a.size();
+  for (size_t i = 1, j = 0; i < n; ++i) {
+    size_t bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) std::swap(a[i], a[j]);
+  }
+  for (size_t len = 2; len <= n; len <<= 1) {
+    const double ang = -2.0 * 3.14159265358979323846 / static_cast<double>(len);
+    const std::complex<double> wl(std::cos(ang), std::sin(ang));
+    for (size_t i = 0; i < n; i += len) {
+      std::complex<double> w(1.0, 0.0);
+      for (size_t k = 0; k < len / 2; ++k) {
+        const std::complex<double> u = a[i + k], v = a[i + k + len / 2] * w;
+        a[i + k] = u + v;
+        a[i + k + len / 2] = u - v;
+        w *= wl;
+      }
+    }
+  }
+}
+
+// Band energy with brick-wall edges: Σ|X[k]|² over the FFT bins whose
+// frequency lies in [fc/√2, fc·√2), the signal zero-padded to a power of two.
+// FOR ENERGIES AND ENERGY RATIOS (an IIR band's skirts leak, see above).
+inline double octaveEnergyFft(const std::vector<float>& x, double fc, double fs) {
+  size_t n = 1;
+  while (n < x.size()) n <<= 1;
+  std::vector<std::complex<double>> a(n);
+  for (size_t i = 0; i < x.size(); ++i) a[i] = x[i];
+  fftInPlace(a);
+  const double lo = fc / std::sqrt(2.0), hi = fc * std::sqrt(2.0);
+  double e = 0.0;
+  for (size_t k = 0; k <= n / 2; ++k) {
+    const double f = static_cast<double>(k) * fs / static_cast<double>(n);
+    if (f >= lo && f < hi) e += std::norm(a[k]);
+  }
+  return e;
+}
+
+// Group delay, in samples, of an impulse response h at `hz`:
+// τ = Re( Σ n·h[n]·e^{−jωn} / Σ h[n]·e^{−jωn} ), the derivative of the phase
+// without unwrapping it. Exact for a response that has died out within h.
+inline double groupDelaySamples(const std::vector<float>& h, double hz, double fs) {
+  const double w = 2.0 * 3.14159265358979323846 * hz / fs;
+  std::complex<double> num(0.0, 0.0), den(0.0, 0.0);
+  for (size_t i = 0; i < h.size(); ++i) {
+    const std::complex<double> e = std::polar(static_cast<double>(h[i]), -w * static_cast<double>(i));
+    den += e;
+    num += static_cast<double>(i) * e;
+  }
+  return (num / den).real();
 }

@@ -46,3 +46,9 @@ add_executable(tank_tests tank_tests.cpp)
 target_link_libraries(tank_tests nassau_bloom_core)
 target_compile_options(tank_tests PRIVATE ${NASSAU_WARNING_FLAGS})
 add_test(NAME TankTests COMMAND tank_tests)
+
+# ---- G5: the Spring -------------------------------------------------------
+add_executable(spring_tests spring_tests.cpp)
+target_link_libraries(spring_tests nassau_bloom_core)
+target_compile_options(spring_tests PRIVATE ${NASSAU_WARNING_FLAGS})
+add_test(NAME SpringTests COMMAND spring_tests)

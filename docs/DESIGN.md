@@ -619,6 +619,14 @@ x ─► (+) ─► Dispersion (M stretched allpasses) ─► Delay T ─► LPF
   designed decay at 5 s. Simulated: −1 % at 1 s, −3 % at 2.2 s, −6 % at 5 s,
   and roughly −15 … −20 % at 20 s. GATES G5.2 therefore stops at 5 s.
 
+* **Size glides.** `T` moves as the Tank's lengths do (§9.3): a one-pole
+  smoother (150 ms) towards the *rounded* target, slew-limited to 0.25
+  samples per sample, read with linear interpolation while it moves and with
+  an integer tap once it has arrived. `gS` follows the moving `T` per
+  sub-block. The smoother snaps within 10⁻⁶ samples: at `T` ≈ 2600 a step of
+  the 10⁻⁹ snap that `Smoother` uses elsewhere falls below a double's
+  resolution, and the glide would stall just short of the integer.
+
 ### 6.2 Stereo
 
 The L spring is fed from the L input (after pre-delay) and the R spring from
