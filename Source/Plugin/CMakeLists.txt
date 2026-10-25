@@ -1,8 +1,9 @@
 # NassauBloom plugin bundles (thin wrapper over the Nassau SDK -> iPlug2).
 #
 # One call emits VST3 (.vst3), AU v2 (.component) and CLAP (.clap) from the
-# same sources. PLUG_HAS_UI is 0 until the editor gate (docs/GATES.md G9), so
-# there is no NassauBloomUI.cpp yet and hosts show their generic editor.
+# same sources. The SDK picks the UI backend; -DNASSAU_FORCE_HEADLESS=ON forces
+# the no-UI build, and NassauBloomUI.cpp, wholly inside #if IPLUG_EDITOR, then
+# compiles to nothing (docs/GATES.md G9.3).
 #
 # ci/install.sh and ci/uninstall.sh read this call with sed: the plugin name
 # must stay on the `nassau_add_plugin(` line and FORMATS on a line of its own,
@@ -10,5 +11,5 @@
 
 nassau_add_plugin(NassauBloom
     FORMATS VST3 AU CLAP
-    SOURCES NassauBloomPlugin.cpp
+    SOURCES NassauBloomPlugin.cpp NassauBloomUI.cpp
     LINK    nassau_bloom_core)

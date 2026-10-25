@@ -148,6 +148,17 @@ NassauBloomPlugin::NassauBloomPlugin(const InstanceInfo& info)
 #ifndef NDEBUG
     CheckPresetRecall(*this);
 #endif
+
+#if IPLUG_EDITOR
+    using namespace iplug::igraphics;
+    mMakeGraphicsFunc = [&]() {
+        return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS,
+                            GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
+    };
+    mLayoutFunc = [&](IGraphics* pGraphics) {
+        NassauBloomUI::Layout(*pGraphics, *this);
+    };
+#endif
 }
 
 void NassauBloomPlugin::OnReset()
