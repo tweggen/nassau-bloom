@@ -269,6 +269,9 @@ struct RotLfo {
 // Smoother — one-pole ramp towards a target, with a snap: once within 1e−9 of
 // the target it IS the target, exactly. That is what lets a smoothed gain land
 // on exactly 1.0 or 0.0 and keep DESIGN.md §8's bit-exact cases bit-exact.
+// It also snaps once a step no longer moves the value: for a large target (a
+// pre-delay of 48000 samples) k·d falls below a double's resolution while d
+// is still above 1e−9, and without that the ramp stalled just short for ever.
 // ============================================================================
 struct Smoother {
   double value = 0.0;
@@ -286,10 +289,11 @@ struct Smoother {
 
   double step() {
     const double d = target - value;
-    if (std::fabs(d) < 1e-9) {
+    const double next = value + k * d;
+    if (std::fabs(d) < 1e-9 || next == value) {
       value = target;
     } else {
-      value += k * d;
+      value = next;
     }
     return value;
   }

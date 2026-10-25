@@ -271,6 +271,31 @@ int main() {
     }();
     check(fmt("after one time constant it is at %.4f (want 1 - 1/e = 0.6321 +- 0.001)", t63).c_str(),
           std::fabs(t63 - (1.0 - std::exp(-1.0))) <= 0.001);
+    // A large target, in samples or Hz: there one step k*d falls below a
+    // double's resolution while d is still above the 1e-9 snap, so a
+    // smoother that only snapped at 1e-9 stalled short of it for ever. The
+    // pre-delay at 250 ms / 192 kHz (48000 samples, tau 50 ms) and the
+    // 20 kHz filter cutoffs (per sub-block) are the worst cases.
+    const struct { const char* what; double target, tau, rate; } big[] = {
+        {"pre-delay 250 ms at 192 kHz (48000 samples)", 48000.0, 0.050, 192000.0},
+        {"pre-delay 250 ms at 48 kHz (12000 samples)", 12000.0, 0.050, 48000.0},
+        {"a 20 kHz cutoff, per sub-block at 192 kHz", 20000.0, 0.020, 192000.0 / 32.0},
+    };
+    for (const auto& b : big) {
+      Smoother s;
+      s.setTimeConstant(b.tau, b.rate);
+      s.setTarget(b.target);
+      const int limit = static_cast<int>(60.0 * b.tau * b.rate);  // 60 time constants
+      int n = 0;
+      while (!s.settled() && n < limit) {
+        s.step();
+        ++n;
+      }
+      check((std::string(b.what) +
+             fmt(": reaches the target exactly (after %.0f steps; %.3g short)", n, b.target - s.value))
+                .c_str(),
+            s.settled());
+    }
   }
 
   return testSummary();

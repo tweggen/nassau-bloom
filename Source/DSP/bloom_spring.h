@@ -147,10 +147,10 @@ public:
         const double prev = l.value;
         const double t = l.step();
         l.value = std::min(prev + kSpringSlew, std::max(prev - kSpringSlew, t));
-        // Smoother's own snap (1e−9) never fires at T ≈ 2640: there one step,
-        // k·d with k ≈ 1.4e−4, falls below a double's resolution (4.5e−13)
-        // while d is still ~3e−9, and the glide stalls just short. A
-        // millionth of a sample is inaudible, so snap there.
+        // At T ≈ 2640 one step, k·d with k ≈ 1.4e−4, falls below a double's
+        // resolution (4.5e−13) while d is still ~3e−9; Smoother snaps there
+        // now, but only some 3 s into the glide. A millionth of a sample is
+        // inaudible, so snap sooner, here.
         if (std::fabs(l.target - l.value) < 1e-6) l.value = l.target;
       }
       float v = in[c] + fb_[c];
