@@ -3,7 +3,9 @@
 #include "nassau_presets.h"
 #include "nassau_state.h"
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
+#include <cstdio>
 
 using namespace iplug;
 
@@ -27,6 +29,46 @@ static_assert(nassau_presets::kAlgorithm == kAlgorithm, "preset index drift: kAl
 static_assert(nassau_presets::kOutputGain == kOutputGain, "preset index drift: kOutputGain");
 static_assert(nassau_presets::kParamCount == kNumParams, "preset index drift: kNumParams");
 static_assert(nassau_presets::kPresetCount == kNumPresets, "preset index drift: kNumPresets");
+
+#ifndef NDEBUG
+// GATES G8.1, in every debug build: recall each factory preset through
+// iPlug2's own mechanism (RestorePreset -> UnserializeState, the chunk
+// MakePresetFromChunk stored) and read every parameter back. Any difference
+// from the table asserts. Ends on preset 0, which IS the defaults (checked
+// too), so the plugin starts exactly as it would without the check; the
+// writes happen in the ctor, before any host sees a parameter (R9 is about
+// the plugin overriding the host, which this cannot).
+static void CheckPresetRecall(NassauBloomPlugin& plug)
+{
+    int mismatches = 0;
+    auto compare = [&](int preset, const nassau_presets::ParamArray& want) {
+        for (int i = 0; i < kNumParams; ++i) {
+            const double got = plug.GetParam(i)->Value();
+            if (got != want[static_cast<size_t>(i)]) {
+                std::fprintf(stderr, "NassauBloom G8.1: preset %d, param %d (%s): recalled %.17g, table %.17g\n",
+                             preset, i, plug.GetParam(i)->GetName(), got, want[static_cast<size_t>(i)]);
+                ++mismatches;
+            }
+        }
+    };
+    for (int k = kNumPresets - 1; k >= 0; --k) {
+        const bool ok = plug.RestorePreset(k);
+        if (!ok) {
+            std::fprintf(stderr, "NassauBloom G8.1: RestorePreset(%d) failed\n", k);
+            ++mismatches;
+        }
+        compare(k, nassau_presets::Presets()[static_cast<size_t>(k)].values);
+    }
+    compare(0, nassau_presets::Defaults());
+    static bool sReported = false;  // once per process: hosts make many instances
+    if (!sReported) {
+        sReported = true;
+        std::fprintf(stderr, "NassauBloom G8.1: %d presets x %d params recalled through RestorePreset, %d mismatches\n",
+                     kNumPresets, kNumParams, mismatches);
+    }
+    assert(mismatches == 0 && "G8.1: a factory preset does not recall to its table values");
+}
+#endif
 
 Config NassauBloomPlugin::MakePluginConfig()
 {
@@ -103,6 +145,9 @@ NassauBloomPlugin::NassauBloomPlugin(const InstanceInfo& info)
         MakePresetFromChunk(preset.name, chunk);
     }
     assert(NPresets() == kNumPresets && "Preset count out of sync with PLUG_N_PRESETS");
+#ifndef NDEBUG
+    CheckPresetRecall(*this);
+#endif
 }
 
 void NassauBloomPlugin::OnReset()
@@ -136,7 +181,7 @@ void NassauBloomPlugin::OnParamChange(int p)
         case kWidth:      mCore.setWidth(f);                 break;
         case kComplexity: mCore.setComplexity(param->Int()); break;
         case kAlgorithm:  mCore.setAlgorithm(param->Int());  break;
-        case kOutputGain:     mCore.setOutputDb(f);              break;
+        case kOutputGain: mCore.setOutputDb(f);              break;
         default: break;
     }
 }
@@ -146,16 +191,22 @@ void NassauBloomPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFra
     // PLUG_CHANNEL_IO "1-2 2-2": with one input connected, the core still
     // gets two channels, both the same signal (DESIGN.md §1.2). The tail's
     // stereo comes from the network, not from the input.
-    const int  n      = std::min(nFrames, kMaxBlockSize);
+    // A host block longer than the float scratch is processed in pieces;
+    // truncating it would leave the rest of the output unwritten.
     const bool monoIn = NInChansConnected() < 2;
-    for (int i = 0; i < n; ++i) {
-        mInL[i] = static_cast<float>(inputs[0][i]);
-        mInR[i] = static_cast<float>(inputs[monoIn ? 0 : 1][i]);
-    }
-    mCore.process(mInL, mInR, mOutL, mOutR, n);
-    for (int i = 0; i < n; ++i) {
-        outputs[0][i] = static_cast<sample>(mOutL[i]);
-        outputs[1][i] = static_cast<sample>(mOutR[i]);
+    for (int start = 0; start < nFrames; start += kMaxBlockSize) {
+        const int n = std::min(nFrames - start, kMaxBlockSize);
+        const sample* inL = inputs[0] + start;
+        const sample* inR = inputs[monoIn ? 0 : 1] + start;
+        for (int i = 0; i < n; ++i) {
+            mInL[i] = static_cast<float>(inL[i]);
+            mInR[i] = static_cast<float>(inR[i]);
+        }
+        mCore.process(mInL, mInR, mOutL, mOutR, n);
+        for (int i = 0; i < n; ++i) {
+            outputs[0][start + i] = static_cast<sample>(mOutL[i]);
+            outputs[1][start + i] = static_cast<sample>(mOutR[i]);
+        }
     }
 }
 
