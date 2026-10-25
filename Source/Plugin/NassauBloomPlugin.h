@@ -3,6 +3,10 @@
 #include "IPlug_include_in_plug_hdr.h"
 #include "bloom_core.h"
 
+#if IPLUG_EDITOR
+#include "NassauBloomUI.h"   // guarded: not present in a headless build
+#endif
+
 // The parameter surface of docs/DESIGN.md §10: 16 params, final from G0 on.
 // Names, ranges and defaults live in nassau_presets.h (Params()), which the
 // ctor reads, so this enum is the only other place an index is written down.
