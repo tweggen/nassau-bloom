@@ -819,7 +819,7 @@ enums are `std::atomic<int>`. The core converts units; the wrapper passes
 There is no tempo-synced pre-delay, no ER/late crossover EQ, no freeze, no
 ducking and no gate. Each of these is a fine feature on someone else's reverb.
 A "simple" reverb that grows them stops being simple. Requests for them go to
-§12 and are not done in v1.
+§13 and are not done in v1.
 
 ---
 
@@ -899,13 +899,52 @@ measure (GATES G7).
 
 ---
 
-## 12. Non-goals for v1
+## 12. Editor
+
+`Source/Plugin/NassauBloomUI.cpp`, an iPlug2 IGraphics editor (NanoVG / GL2 on
+Windows), 544 × 270, built from nassau-plugin-sdk's shared editor style
+(`include/nassau/ui_style.h`, specified in its `docs/UI_STYLE.md`): the
+metrics, text, control styles and layout helpers are the SDK's, the palette
+(a cool night blue) and the panels below are this plugin's. Every control binds to its
+parameter by enum index, so iPlug2 does all the UI ↔ parameter sync and the
+editor never writes the core (R9).
+
+```
+ NassauBloom   [<] [>] [ factory preset menu ]                      Nassau
+ ┌ INPUT ─────────────────┐ ┌ ROOM ─────────┐ ┌ OUTPUT ────────────────┐
+ │  HPF    LPF  Pre-Delay │ │ Size   Early  │ │  Mix   Width   Output  │
+ └────────────────────────┘ └───────────────┘ └────────────────────────┘
+ ┌ LATE ───────────────────────────────────────┐ ┌ DAMPING ───────────┐
+ │ Algorithm [Tank|Spring]  [Plain|Dense]      │ │                    │
+ │  Late     Decay     Diffusion   Modulation  │ │   High      Low    │
+ └─────────────────────────────────────────────┘ └────────────────────┘
+```
+
+* **Signal order, left to right and top to bottom:** what reaches the reverb
+  (§2–§3), the room and its early reflections (§4), the output stage
+  (§7–§8); then the tail (§5–§6) with the two structure switches over it, and
+  the in-loop damping that shapes how it decays (§5.4).
+* **The two enums are two-way switches**, not knobs; their labels come from
+  the parameters' own `InitEnum` strings, so they cannot drift.
+* **The preset selector** is iPlug2's baked preset manager over the
+  `MakePresetFromChunk` bank: choosing one calls `RestorePreset`, the path
+  GATES G8.1 checks.
+* **Font, readability, size check:** as UI_STYLE.md requires: the font
+  registered by family name on every open (GATES G9.4); knob values below dark
+  knob faces; the selected switch segment in the accent; the window size
+  derived from the metrics and `static_assert`ed against `config.h`.
+* **Fixed size.** `PLUG_HOST_RESIZE 0`, and the Config passes the size as both
+  min and max (G0.7, QBX-219).
+
+---
+
+## 13. Non-goals for v1
 
 * A convolution mode, IR loading.
 * Tempo-synced pre-delay; freeze; ducking; gating.
 * Per-tap filtering in the ER path (§4.3).
 * Oversampling. Nothing in the chain is nonlinear.
-* An editor beyond the generic host UI (`PLUG_HAS_UI 0` until a UI gate is
-  scheduled; see GATES).
+* A resizable editor, or one that shows the signal (meters, a decay
+  display). The editor is knobs and switches (§12).
 * A third algorithm. If a "Plate" algorithm distinct from the Tank is ever
   wanted, it is appended to `kAlgorithm`'s enum, never inserted.
