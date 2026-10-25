@@ -52,3 +52,32 @@ add_executable(spring_tests spring_tests.cpp)
 target_link_libraries(spring_tests nassau_bloom_core)
 target_compile_options(spring_tests PRIVATE ${NASSAU_WARNING_FLAGS})
 add_test(NAME SpringTests COMMAND spring_tests)
+
+# ---- G6: switching Algorithm and Complexity ----------------------------------
+add_executable(switch_tests switch_tests.cpp)
+target_link_libraries(switch_tests nassau_bloom_core)
+target_compile_options(switch_tests PRIVATE ${NASSAU_WARNING_FLAGS})
+add_test(NAME SwitchTests COMMAND switch_tests)
+
+# ---- G6.4: golden-reference parity (the nassau-eq pattern) -----------------
+# bloom_golden generate|verify. The committed fixture (fixtures/golden.bin) is
+# the frozen output of every preset; the GoldenParity ctest runs `verify`.
+set(GOLDEN_FIXTURE "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden.bin")
+add_executable(bloom_golden bloom_golden.cpp)
+target_link_libraries(bloom_golden nassau_bloom_core)
+target_include_directories(bloom_golden PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Plugin)
+target_compile_options(bloom_golden PRIVATE ${NASSAU_WARNING_FLAGS})
+target_compile_definitions(bloom_golden PRIVATE GOLDEN_FIXTURE_PATH="${GOLDEN_FIXTURE}")
+# fopen() is the portable spelling; MSVC would have fopen_s.
+if(MSVC)
+  target_compile_definitions(bloom_golden PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME GoldenParity COMMAND bloom_golden verify "${GOLDEN_FIXTURE}")
+
+# ---- G6.5 / G6.3: benchmark (NOT a ctest; run by hand) ---------------------
+# CPU per preset and memory per instance, from a steady clock: a benchmark,
+# not part of the pass/fail suite.
+add_executable(bloom_bench bloom_bench.cpp)
+target_link_libraries(bloom_bench nassau_bloom_core)
+target_include_directories(bloom_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Plugin)
+target_compile_options(bloom_bench PRIVATE ${NASSAU_WARNING_FLAGS})

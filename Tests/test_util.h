@@ -57,7 +57,9 @@ struct Xorshift32 {
 //   PluckBurst  nassau-zermatt's: a 220 Hz naive sawtooth under a 20 ms
 //             exponential attack and a 50 ms decay, xorshift-dithered at
 //             -90 dBFS (the dither runs for the whole signal)
-enum class TestSignal { Xorshift, Impulse, Sine1k, PluckBurst };
+//   SnareBurst  xorshift noise (amplitude 1) at full level for 5 ms, then
+//             decaying exponentially with a 60 ms time constant
+enum class TestSignal { Xorshift, Impulse, Sine1k, PluckBurst, SnareBurst };
 
 inline std::vector<float> testSignal(TestSignal kind, double fs, double seconds,
                                      uint32_t seed = 0xB100Bu) {
@@ -83,6 +85,15 @@ inline std::vector<float> testSignal(TestSignal kind, double fs, double seconds,
         if (phase >= 1.0) phase -= 1.0;
         const double env = t < 0.020 ? 1.0 - std::exp(-5.0 * t / 0.020) : std::exp(-(t - 0.020) / 0.050);
         v[i] = static_cast<float>(env * saw + dither * static_cast<double>(rng.nextBipolar()));
+      }
+      break;
+    }
+    case TestSignal::SnareBurst: {
+      Xorshift32 rng(0x5AA5E001u);
+      for (size_t i = 0; i < n; ++i) {
+        const double t = static_cast<double>(i) / fs;
+        const double env = t < 0.005 ? 1.0 : std::exp(-(t - 0.005) / 0.060);
+        v[i] = static_cast<float>(env * static_cast<double>(rng.nextBipolar()));
       }
       break;
     }

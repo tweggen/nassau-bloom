@@ -10,10 +10,8 @@
 /**
  * BloomCore — the NassauBloom stereo reverb DSP core.
  *
- * G5 (docs/GATES.md): the input filters, the pre-delay, the early
- * reflections, the Tank, the Spring, the width stage, the mix and the output
- * are real. Switching Algorithm or Complexity is not yet crossfaded (G6): a
- * switch to the other late network starts it from reset, at once.
+ * G6 (docs/GATES.md): every stage is real. A switch of Algorithm or
+ * Complexity crossfades the late output over 2048 samples (DESIGN.md §9.4).
 
  *
  * Design contract (docs/DESIGN.md, kept stable across gates):
@@ -86,6 +84,9 @@ public:
 
   float sampleRate() const { return sampleRate_; }
 
+  /// Bytes of delay memory this instance allocated in init() (GATES G6.5).
+  size_t memoryBytes() const;
+
   // ===== Test hook (GATES R6 exception, stated in G2.3) =====
   /// TEST ONLY. For the next process() call, replace the summed wet signal
   /// (what the reverb paths produce, before Width) with these buffers, which
@@ -106,7 +107,15 @@ public:
   int testErRecomputeCount() const { return erRecomputes_; }
 
   /// TEST ONLY (GATES G4.10). The current length of the Tank's delay 24–30.
-  double testTankD1Length() const { return tank_.testD1Length(); }
+  double testTankD1Length() const { return tank_[late_.tank].testD1Length(); }
+
+  /// TEST ONLY (GATES G6). The late crossfade's length in samples for the
+  /// next switches; 0 switches hard. Default 2048 (DESIGN.md §9.4).
+  void testLateCrossfade(int samples) { lateFadeLen_ = samples < 0 ? 0 : samples; }
+
+  /// TEST ONLY (GATES G6.3). How many late structures the last processed
+  /// sample ran: 2 during a crossfade, 1 otherwise.
+  int testLateStructuresRun() const { return lateRun_; }
 
   /// TEST ONLY. The L spring's current loop delay T, in samples.
   double testSpringLength() const { return spring_.testLength(); }
@@ -168,14 +177,25 @@ private:
   bloom::Smoother erGain_, lateGain_;
   bloom::Smoother dampHighHz_, dampLowHz_;
 
-  // ---- Late network: the Tank (DESIGN.md §5) ----
-  bloom::Tank tank_;
-  bloom::Smoother decay_s_, diffusion_s_, modulation_s_;  // per sub-block
-  double lateOut_ = 0.0;  // kLateGain · (RT60/2)^−¼ · S^0.42 (§5.6), or the Spring's (§6.3)
-
-  // ---- Late network: the Spring (DESIGN.md §6) ----
+  // ---- Late network: the Tank (§5), the Spring (§6), the switch (§9.4) ----
+  // Two Tanks, so that a Plain/Dense switch can crossfade from the running
+  // tank into a copy of it that continues in the other mode.
+  struct LateSlot {
+    int algorithm = kAlgorithmTank;
+    int tank = 0;  // which of tank_[] (Tank only)
+    bool dense = false;
+    double out = 0.0;  // its output gain: §5.6's or §6.3's
+  };
+  void setUpLate(LateSlot& s, double sizeMetres);
+  void processLate(const LateSlot& s, float xL, float xR, float& lL, float& lR);
+  bloom::Tank tank_[2];
   bloom::Spring spring_;
-  int activeAlgorithm_ = kAlgorithmTank;  // the late network process() runs
+  bloom::Smoother decay_s_, diffusion_s_, modulation_s_;  // per sub-block
+  LateSlot late_;      // the structure being heard (crossfading in)
+  LateSlot lateOld_;   // the one crossfading out
+  int lateFade_ = 0;   // samples of crossfade left, 0 = none
+  int lateFadeLen_ = 2048;
+  int lateRun_ = 1;
 
   // ---- Test hooks ----
   const float* testWetL_ = nullptr;
