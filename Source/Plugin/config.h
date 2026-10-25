@@ -45,12 +45,12 @@
 // PLUG_HAS_UI advertises the editor (GATES G9); its code is gated by
 // IPLUG_EDITOR, which a forced-headless build sets to 0, so that build still
 // links and simply reports no editor. The size is NassauBloomUI.cpp's layout
-// (two rows of panels under a header), and the Config passes it as the min AND
-// max editor size (G0.7): never 0, which iPlug2 clamps every reopened editor
-// to (QBX-219).
+// (two rows of panels under a header, checked by static_asserts there), and
+// the Config passes it as the min AND max editor size (G0.7): never 0, which
+// iPlug2 clamps every reopened editor to (QBX-219).
 #define PLUG_HAS_UI     1
-#define PLUG_WIDTH      580
-#define PLUG_HEIGHT     292
+#define PLUG_WIDTH      544
+#define PLUG_HEIGHT     270
 #define PLUG_FPS        60
 
 #define PLUG_SHARED_RESOURCES 0

@@ -902,7 +902,10 @@ measure (GATES G7).
 ## 12. Editor
 
 `Source/Plugin/NassauBloomUI.cpp`, an iPlug2 IGraphics editor (NanoVG / GL2 on
-Windows), 580 × 292, the nassau-zermatt pattern. Every control binds to its
+Windows), 544 × 270, built from nassau-plugin-sdk's shared editor style
+(`include/nassau/ui_style.h`, specified in its `docs/UI_STYLE.md`): the
+metrics, text, control styles and layout helpers are the SDK's, the palette
+(a cool night blue) and the panels below are this plugin's. Every control binds to its
 parameter by enum index, so iPlug2 does all the UI ↔ parameter sync and the
 editor never writes the core (R9).
 
@@ -926,9 +929,10 @@ editor never writes the core (R9).
 * **The preset selector** is iPlug2's baked preset manager over the
   `MakePresetFromChunk` bank: choosing one calls `RestorePreset`, the path
   GATES G8.1 checks.
-* **Font:** registered by family name ("Segoe UI" first on Windows,
-  "Helvetica" on macOS) on every editor open, never behind a once-only guard;
-  nassau-zermatt shipped both mistakes (GATES G9.4).
+* **Font, readability, size check:** as UI_STYLE.md requires: the font
+  registered by family name on every open (GATES G9.4); knob values below dark
+  knob faces; the selected switch segment in the accent; the window size
+  derived from the metrics and `static_assert`ed against `config.h`.
 * **Fixed size.** `PLUG_HOST_RESIZE 0`, and the Config passes the size as both
   min and max (G0.7, QBX-219).
 
